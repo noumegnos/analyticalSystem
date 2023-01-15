@@ -1,0 +1,21 @@
+{
+  "dependencies": {
+    "polyfill-library": "^4.5.0"
+  },
+  "devDependencies": {
+    "webextension-polyfill": "^0.10.0"
+  },
+  "background": {
+    "scripts": [
+      "browser-polyfill.js",
+      "background.js"
+    ]
+  },
+
+  "content_scripts": [{
+    "js": [
+      "browser-polyfill.js",
+      "content.js"
+    ]
+  }]
+}
