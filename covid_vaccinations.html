@@ -1,0 +1,964 @@
+<!doctype html>
+<html>	
+	<head>
+		<meta charset="UTF-8">
+		<title>The Unwelcomed</title>	
+        <script src="https://d3js.org/d3.v5.min.js"></script>
+        <style></style>	
+	</head>			
+	<body>	
+		<script>
+
+// -------------------------------------- color variables
+
+        var main_col = "#ff0066";
+        var title_col = "#bd1349";
+        var subtitle_col = "#ffffff";
+        var white_col = "#ffffff";
+        var light_col = "#fc68ab";
+        var moderate_col = "red";
+        var dark_col = "red";  
+        var border_col = "green"; 
+        var back_col = "#010c16"; 
+        var black_col = "#210612"; 
+		var country_over_col = "#80bfff";
+		var tooltip_col = "green";
+		var blue_col = "##80bfff";
+		var button_over_col = "#010c16";
+		var country_over_col = "##80bfff";
+
+		var empty_colour = "white";
+		var full_colour = "red";
+
+// -------------------------------------- main settings
+
+		// Background
+		d3.select("body")
+			.style("background", back_col) 
+			.style("font-family","Verdana, Geneva, sans-serif")
+			.attr("height", "700px");  
+
+		// Margin
+		var margin = { top: 65, right: 50, bottom: 20, left: 50 },
+		    width = 1200 - margin.left - margin.right,
+			height = 740 - margin.top - margin.bottom;
+
+// -------------------------------------- div for svg
+
+		var div_main = d3.select("body")
+			.append("div")
+			.attr("id", "div_main")
+			// .style("border", "10px solid white")
+			.style("margin","50px auto");
+
+// -------------------------------------- svg board
+
+		var svg = div_main.append('svg')
+			.attr('width', width + margin.left + margin.right)
+			.attr('height', height + margin.top + margin.bottom)
+			.style("display","block")
+			.style("margin","0px auto")
+			// .style("border", "2px solid grey") 
+			.style("background", back_col) 
+			.append('g')
+			.attr('transform', 'translate(' + margin.left + ',' + margin.top + ')');
+
+// -------------------------------------- Title & subtitle
+
+
+		// // Title
+		// var story = svg
+		//  .append('image')
+		// 		.attr('xlink:href', "http://alhadaqa.com/wp-content/uploads/2019/08/life4.png")
+		// 		.attr('width', 480)
+		// 		.attr('height', 100)
+		// 		.style("opacity", 1)
+		// 		.attr("transform", "translate(-20,-70)");	
+
+		// Sub-Title
+		svg.append("text")
+		.text("Covid spread and vaccination status")
+			.attr("x", -20)
+			.attr("y",0)
+			.style("fill", main_col)
+			.style("font","10.9px Verdana")
+			.style("opacity", 0.9);
+	
+// -------------------------------------- geo data
+
+const geoFile = "https://raw.githubusercontent.com/mohamadwaked/classico/master/world_map_ar.geojson";
+	const dataFile = "owid-covid-data.csv";
+
+	// store global objects here
+	var map = {}; 
+	var dataset = {};
+
+	// store some of the data in a global object to prevent need for reprocessing a lot of data
+	let maxCasesByCountry = new Map();
+
+	let excessMortalityByDateForCountry = new Map();
+
+	let datesearch = {};
+
+	var playing;
+
+	var highestMax = 0;
+	var maxCountry = "";
+	var highestExcessDeath = 0;
+	var lowestExcessDeath = 0;
+	var indexOfDataset = 0;
+	var highestTotalDeaths = 0;
+
+	Promise.all([
+
+		d3.json(geoFile), 
+		d3.csv(dataFile, function(vax){
+			return {
+				continent: vax.continent,
+				location: vax.location,
+				date: vax.date,
+				total_cases: vax.total_cases,
+				new_cases: vax.new_cases,
+				total_deaths: vax.total_deaths,
+				new_deaths: vax.new_deaths,
+				total_vaccinations: vax.total_vaccinations,
+				people_vaccinated: vax.people_vaccinated,
+				people_fully_vaccinated: vax.people_fully_vaccinated,
+				total_boosters: vax.total_boosters,
+				new_vaccinations: vax.new_vaccinations,
+				population: vax.population,
+				excess_mortality: vax.excess_mortality,
+				iso_code: vax.iso_code
+
+			}
+		})
+	])
+	.then(function([shapes, data]){
+		map.features = shapes.features; 	
+		dataset = data;
+	
+		console.log(dataset)
+		console.log(map.features)
+		console.log(map.features[10].properties.name)
+
+		// Call the draw function 
+		draw();
+
+		//just a test function
+		//grabSample();
+
+		preProcessData();
+
+			
+	}); 
+
+
+	//in order to animate the map, I simply have to make the date value update itself over time
+	function playTimeline(){
+
+		var min = 0;
+
+		playing = setInterval(function(){
+			document.getElementById("day").value = min;
+			runFunctions();
+					min = min + 1;
+					if(min > 1032){
+						stopTimeline();
+					}
+			},100);
+
+		// if(!play){
+		// 	play = true;
+		// 	var playing = setInterval(function(){
+		// 	document.getElementById("day").value = min;
+		// 	runFunctions();
+		// 			min = min + 1;
+		// 	},100);
+		// }
+		// else{
+		// 	play = false;
+		// 	clearInterval(playing);
+		// }
+	}
+
+	function stopTimeline(){
+
+		clearInterval(playing);
+
+	}
+
+	function runFunctions(){
+		//takes a value between 0 and 1032, almost 3 years of daily data
+		var x = document.getElementById("day").value;
+		dateSelection(x);
+
+		var y = document.getElementById("functions").value;
+
+		if(y == 1){
+			compareCountryCaseSpread();
+		}
+		else if (y == 2){
+			compareToCountryWithMostCases();
+		}
+		else if(y == 3){
+			compareCountryCaseSpreadToPopulation();
+		}
+		else if(y == 4){
+			compareCountryVaxDosesToPopulation();
+		}
+		else if(y == 5){
+			compareToCountryWithMostExcessDeath();
+		}
+		else if(y == 6){
+			compareToCountryWithMostDeaths();
+		}
+	}
+
+// -------------------------------------- map 
+
+	// Projection
+	const projection = d3.geoNaturalEarth1() //d3.geoNaturalEarth1() d3.geoMercator()
+					 .scale(200)
+					 .translate([(width/2)-140, (height/2)+10]); 
+	
+	// Path generator 
+	const geoPath = d3.geoPath()
+				  .projection(projection);
+	
+// -------------------------------------- scales
+
+	// // Area Scale
+	// var areaScale = d3.scaleSqrt()
+	// 		.domain([0,800])
+	// 		.range([0.6,10]);
+
+	// // Circle Scale
+	// var circleScale = d3.scaleSqrt()
+	// 		.domain([0,10])
+	// 		.range([0,5]);
+
+	// // Color Scale
+	// var colorScale = d3.scaleLinear()
+	// 		.domain([0,800])
+	// 		.range([moderate_col, light_col]) ;
+
+	// // Opacity Scale
+	// var opacityScale = d3.scaleLinear()
+	// 		.domain([0,600])
+    //         .range([0.2, 0.9]);                   
+    
+// -------------------------------------- time parse, formate
+
+	// // Parse date
+	// var parseTime = d3.timeParse("%e-%b-%Y");
+	// console.log(parseTime("9-Feb-1917")); // test the formula
+				
+	// // Formate date
+	// var formatTime = d3.timeFormat("%e %b %y");
+	// console.log(formatTime(new Date)); // test the formula
+
+// --------------------------------- draw function
+
+	// var count = 0;
+
+	// function incrementId(){
+	// 	count = count +1;
+	// 	return count;
+	// }
+
+	//changeColour function selects a country by id and changes its colour
+	function changeColour(id, color){
+
+		//var id = 2;
+
+		svg.select("#id-" + id)
+			.style("fill", color);
+	}
+
+
+
+
+
+//this function will do a little work before the main functions, so that some of the data is easier to handle
+//this creates a dictionary of countries and their maximumCases cases
+function preProcessData(){
+
+	console.log("Preprocessing...");
+
+	var lastKnownExcessDeath = 0;
+
+	for (let index = 0; index < dataset.length; index++) {
+
+		var test = dataset[index].location;
+		var maximumCases = 0;
+		var maximumExcessDeath = 0;
+		var minimumExcessDeath = 0;
+		var maximumTotalDeaths = 0;
+
+		for (let index2 = 0; index2 < map.features.length; index2++) {
+			if(test == map.features[index2].properties.name || test == "United States"){ //by comparing the country names, I'd hoped to cull some extra data from the dataset (eg Asia, Africa, and other contintent names)
+
+				if(Number(dataset[index].total_cases) > maximumCases){
+					maximumCases = Number(dataset[index].total_cases);
+
+
+					if(maximumCases > highestMax){
+						highestMax = maximumCases;
+						maxCountry = test;
+					}
+				}
+
+				if(Number(dataset[index].total_deaths) > maximumTotalDeaths){
+					maximumTotalDeaths = Number(dataset[index].total_deaths);
+
+					if(highestTotalDeaths < maximumTotalDeaths){
+						highestTotalDeaths = maximumTotalDeaths;
+
+						console.log(highestTotalDeaths);
+					}
+				}
+
+				
+				if(Number(dataset[index].excess_mortality > maximumExcessDeath)){
+
+					maximumExcessDeath = Number(dataset[index].excess_mortality);
+
+					if(maximumExcessDeath > highestExcessDeath){
+						highestExcessDeath = maximumExcessDeath;
+					}
+				}
+				if(Number(dataset[index].excess_mortality < minimumExcessDeath)){
+
+					minimumExcessDeath = Number(dataset[index].excess_mortality);
+
+					if(minimumExcessDeath < lowestExcessDeath){
+						lowestExcessDeath = minimumExcessDeath;
+					}
+				}
+
+								
+
+
+
+			}
+		}
+
+		//check if this index is same location as last index location, if index is 0 this would cause issues
+		if(index > 0){
+			if(dataset[index].location != dataset[index-1].location){
+				//if not same location as last index, set this excess death to index value, which may be missing data
+				excessMortalityByDateForCountry.set(index, Number(dataset[index].excess_mortality));
+			}
+			else{
+				//location same as last checked
+				if(Number(dataset[index].excess_mortality) != 0 && Number(dataset[index].excess_mortality != null)){
+					//if value of excess death at index is non-zero and non-null, set last known excess death value as this one, and remember
+					lastKnownExcessDeath = Number(dataset[index].excess_mortality);
+					excessMortalityByDateForCountry.set(index, lastKnownExcessDeath);
+				}
+				else{
+					//excess death value data is missing, set as last known excess death value
+					excessMortalityByDateForCountry.set(index, lastKnownExcessDeath);
+				}
+			}
+		} //index is 0, this can only be the very first entry and will be missing data
+		else{
+			excessMortalityByDateForCountry.set(index, dataset[index].excess_mortality)
+		}
+		maxCasesByCountry.set(test, maximumCases);
+	}
+	console.log(maxCasesByCountry);
+	console.log("Highest case count: " + maxCountry + " with " + highestMax + " cases.");
+	console.log(excessMortalityByDateForCountry);
+}
+
+function dateSelection(datevalue){
+
+
+
+	datesearch = dataset.filter(obj => {
+		return obj.date === dataset[datevalue].date
+	})
+
+	//console.log(datesearch[datevalue].date);
+
+	//onsole.log(datesearch.length);
+
+	//this gives an index in dataset of the first date for any country
+	//I'm trying to get the index in order to use excessData map to give its values without using a loop, which would become unfeasably slow
+	//indexOfDataset = dataset.indexOf(datesearch[datevalue]);
+	//console.log(indexOfDataset);
+
+	// let result = dataset.filter(obj => {
+ 	// 	return obj.location === "Afghanistan"
+	// })
+
+	//result[i] + something = dataset[i] = excessDeathMap.get(i)?
+}
+
+//this allows us to select a sample from the dataset
+function grabSample(string){
+
+	let result = dataset.filter(obj => {
+		return obj.location === string
+	})
+
+	//console.log(result.length)
+
+	return result;
+}
+
+function excessMortalityFilter(index){
+
+	excessFilter = dataset.filter(obj => {
+		return obj.excess_mortality === dataset[index].excess_mortality
+	})
+
+	console.log(excessFilter);
+
+	return(excessFilter[index].excess_mortality);
+}
+
+	//in order to draw a dynamic colour for the countries based on the data, we must figure out how to calculate the colours
+	//we will need to start with two data points, one representing "empty" colour and one "full" colour
+	//empty colour is always 0, but full colour could be used for different data, such as total vaccinations or total cases
+	//full colour will be based on the country with the highest number of the selected data points
+	//then, as we play the animation, the colours will transition over time, based on data points on date, showing eg the spread of cases
+
+	//first lets define the empty and full colours. Added "empty_colour" and "full_colour" to the colour definitions above (white and red)
+	//now, the transition between these two colours
+	//empty_colour is 0%, full_colour is the highest value of the data for 100%, the actual colour shown uses a percentage value by taking the datapoint on the date divided by the highest value
+	//then we will transition between dates, updating the colour as we go
+
+
+function compareToCountryWithMostCases(){
+
+	var cases_by_country_at_date = 0;
+
+	for (let index = 0; index < map.features.length; index++) {
+
+		for (let index2 = 0; index2 < datesearch.length; index2++) {
+
+			if(map.features[index].properties.id == datesearch[index2].iso_code){
+
+				cases_by_country_at_date = Number(datesearch[index2].total_cases);
+
+				setColours(index, datesearch[index2].location, cases_by_country_at_date, 3);
+			}
+		}
+	}
+}
+
+function compareToCountryWithMostDeaths(){
+
+	var deaths_by_country_at_date = 0;
+
+	for (let index = 0; index < map.features.length; index++) {
+
+		for (let index2 = 0; index2 < datesearch.length; index2++) {
+
+			if(map.features[index].properties.id == datesearch[index2].iso_code){
+
+				deaths_by_country_at_date = Number(datesearch[index2].total_deaths);
+
+				console.log(deaths_by_country_at_date);
+
+				setColours(index, datesearch[index2].location, deaths_by_country_at_date, 5);
+			}
+		}
+	}
+}
+
+//excess mortality stats are somewhat problematic, as they only appear to update roughly once a month
+//it would be good if I could make the system remember the last known stat
+//however, since the system actually selects a date without looping through all dates, this isn't as clear as I'd hoped
+
+//I added a new loop to the pre-process function, which collects the excess death data and attempts to remember the last known data point, in order to always have relevant data to show
+
+function compareToCountryWithMostExcessDeath(){
+
+	var excess_death_at_date = 0;
+
+
+	//instead of sending "Finland" to grabSample, I'd need to find the first occurence of Finland in the dataset, and use that index as indexOfDataset
+	//then, do this loop for grabSample("Finland").length, thus looping through only Finland in dataset
+	//this would give the correct index for use by excessMortalityByDateForCountry
+
+	// var stronk = "Finland";
+	// var indx = 0;
+
+	// //console.log("looking for " + stronk);
+
+	// for (let index = 0; index < dataset.length; index++) {
+
+	// 	if(dataset[index].location === stronk) {
+	// 		console.log("found at " + index);
+	// 		indx = index;
+	// 		console.log("indx value: " + indx);
+	// 		break; }
+	// }
+
+
+	//hey this is getting somewhere
+	//it does not really need to loop like this, though
+	//this will log every excess mortality value for finland, I only need one at a time, but for every country
+	//so instead of looping though grabSample, I should do grabSample(string)[datevalue] for every country
+	// for (let index2 = 0; index2 < grabSample(stronk).length; index2++) {
+
+	// 	var something = index2 + indx;
+	// 	//console.log(index + index2);
+
+	// 	excess_death_at_date = excessMortalityByDateForCountry.get(something);
+
+	// 	console.log(index2 + " " + excess_death_at_date);
+
+	// 	//console.log(excess_death_at_date);
+
+	// }
+
+
+	for (let index2 = 0; index2 < map.features.length; index2++) {
+
+		for (let index = 0; index < dataset.length; index++) {
+
+		if(dataset[index].location === map.features[index2].properties.name) {
+			//console.log("found at " + index);
+			indx = index;
+			//console.log("indx value: " + indx);
+			break; }
+
+			var something = +document.getElementById("day").value + +indx;
+		
+			excess_death_at_date = excessMortalityByDateForCountry.get(something);
+
+			setColours(index2, dataset[index].location, excess_death_at_date, 4);
+
+
+		}
+
+		//console.log(grabSample(map.features[index2].properties.name)[document.getElementById("day").value].excess_mortality);
+
+		//console.log("indx: " + +indx + " + day value " + +document.getElementById("day").value + " = " + +document.getElementById("day").value + +indx);
+
+
+
+		//console.log(document.getElementById("day").value + " " + excess_death_at_date);
+
+	}
+
+
+// = excessMortalityFilter(document.getElementById("day").value);
+
+//console.log(excess_death_at_date);
+
+//console.log(excessMortalityFilter(5000));
+
+//excess_death_at_date = excessMortalityByDateForCountry.get(index);
+//console.log(excess_death_at_date);
+
+	// for (let index2 = 0; index2 < map.features.length; index2++) {
+		
+	// 	for (let index3 = 0; index3 < datesearch.length; index3++) {
+			
+	// 		if(map.features[index2].properties.id == datesearch[index3].iso_code){
+
+	// 			excess_death_at_date = excessMortalityByDateForCountry.get(index);
+
+	// 			var something = dataset.indexOf()
+
+	// 			datesearch = dataset.filter(obj => {
+	// 				return obj.date === dataset[datevalue].date
+	// 			})
+
+	// 			excessFilter = dataset.filter(obj => {
+	// 				return obj.excess_mortality === dataset[index].excess_mortality
+	// 			})
+
+	// 			setColours(index2, datesearch[index3].location, excess_death_at_date, 4);
+
+	// 		}
+	// 	}
+	// }
+
+//this became a super long looper
+// for (let index = 0; index < dataset.length; index++) { 
+
+// 	for (let index2 = 0; index2 < map.features.length; index2++) {
+		
+// 		for (let index3 = 0; index3 < datesearch.length; index3++) {
+			
+// 			if(map.features[index2].properties.id == datesearch[index3].iso_code){
+
+// 				setColours(index2, datesearch[index3].location, excessMortalityByDateForCountry.get(index), 4);
+
+
+// 		}
+// 	}
+
+// 	//excess_death_at_date = excessMortalityByDateForCountry.get(index);
+// }
+// }
+
+// for (let index = 0; index < map.features.length; index++) {
+
+// 	var rememberLastNonZero = 0; //some data is missing, this will allow the map to use the last value found
+
+// 	for (let index2 = 0; index2 < datesearch.length; index2++) {
+
+// 		if(map.features[index].properties.id == datesearch[index2].iso_code){
+
+// 			excess_death_at_date = excessMortalityByDateForCountry.get(index);
+// 			console.log(excess_death_at_date);
+// 			//Number(datesearch[index2].excess_mortality);
+
+// 			if(excess_death_at_date != 0 && excess_death_at_date != null){
+// 				rememberLastNonZero = excess_death_at_date;
+// 			}
+
+// 			setColours(index, datesearch[index2].location, rememberLastNonZero, 4);
+// 		}
+// 	}
+// }
+}
+
+
+//in this function countries total cases by date is compared to their own total cases in total
+//this would show us a gradient for how quickly cases spread by country
+//success I think
+//it takes a long time to process all these for loops, so I haven't tested too much, but the map colouring seems like it might be accurate
+//it shows us that in a few countries, total cases started going down significantly, but in most countries the cases only kept growing
+//how could I speed up this process? It took something like 10 minutes to work through the data
+//I should probably have a separate function pre-process some of the data, such as country maximumCases cases
+//as it is right now there may be problems later when animating the colours by date, since date is merely selected once now and then data is processed
+//this would lead to re-processing everything whenever the date is changed
+function compareCountryCaseSpread(){
+
+	var cases_by_country_at_date = 0;
+
+	for (let index3 = 0; index3 < map.features.length; index3++) {
+
+		for (let index4 = 0; index4 < datesearch.length; index4++) {
+
+			if(map.features[index3].properties.id == datesearch[index4].iso_code){
+
+				cases_by_country_at_date = Number(datesearch[index4].total_cases);
+
+				setColours(index3, datesearch[index4].location, cases_by_country_at_date, 1);
+			}
+		}
+	}
+}
+
+//compare the total doses of vaccine administered in a country to the number of people vaccinated of the country
+//this would show % of vaccinated population
+function compareCountryVaxDosesToPopulation(){
+
+//var doses_by_country_at_date = 0;
+var people_vaccinated_at_date = 0;
+var population = 0;
+
+for (let index3 = 0; index3 < map.features.length; index3++) {
+
+	for (let index4 = 0; index4 < datesearch.length; index4++) {
+
+		if(map.features[index3].properties.id == datesearch[index4].iso_code){
+
+			people_vaccinated_at_date = Number(datesearch[index4].people_vaccinated);
+			population = Number(datesearch[index4].population);
+
+			console.log(datesearch[index4].location + " " + people_vaccinated_at_date + " " + population);
+
+			if(people_vaccinated_at_date > 0){
+				setColours(index3, datesearch[index4].location, people_vaccinated_at_date, 3, index4);
+			}
+		}
+	}
+}
+}
+
+//compare the total cases in a country to the total population of the country
+//the resultant colouring is then % of infected population
+function compareCountryCaseSpreadToPopulation(){
+
+	var cases_by_country_at_date = 0;
+	var population = 0;
+
+	for (let index3 = 0; index3 < map.features.length; index3++) {
+
+		for (let index4 = 0; index4 < datesearch.length; index4++) {
+
+			if(map.features[index3].properties.id == datesearch[index4].iso_code){
+
+				cases_by_country_at_date = Number(datesearch[index4].total_cases);
+				population = Number(datesearch[index4].population);
+
+				console.log(datesearch[index4].location + " " + cases_by_country_at_date + " " + population);
+
+				if(cases_by_country_at_date > 0){
+					setColours(index3, datesearch[index4].location, cases_by_country_at_date, 3, index4);
+				}
+			}
+		}
+	}
+}
+
+function Tooltipper(d){
+
+	if(d == "United States of America"){
+		d = "United States";
+	}
+
+	let result = dataset.filter(obj => {
+ 		return obj.location === d
+	})
+
+	//console.log(result[document.getElementById("day").value].total_cases);
+
+	// let dateresult = result.filter(obj => {
+	// 	return obj.date === result[document.getElementById("day").value].date
+	// })
+
+	// console.log(dateresult.total_cases);
+
+	let returnMe = "Cases: " + Number(result[document.getElementById("day").value].total_cases) + "<br>"
+	 + "People vaccinated: " + Number(result[document.getElementById("day").value].people_vaccinated) + "<br>"
+	 + "Total vaccines: " + Number(result[document.getElementById("day").value].total_vaccinations) + "<br>"
+	 + "Excess mortality: " + Number(result[document.getElementById("day").value].excess_mortality);
+
+	return(returnMe);
+}
+
+function setColours(countryId,countryName,colourValue, state, datesearchindex){
+
+	var domainMax = 0;
+	var domainMin = 0;
+
+	if(state == 1){
+		domainMax = maxCasesByCountry.get(countryName);
+	}
+	else if(state == 2){
+		domainMax = highestMax;
+	}
+	else if(state == 3){
+		domainMax = Number(datesearch[datesearchindex].population);
+		//console.log(domainMax);
+	}
+	else if(state == 4){
+		domainMin = lowestExcessDeath;
+		domainMax = highestExcessDeath;
+	}
+	else if(state == 5){
+		domainMax = highestTotalDeaths;
+	}
+	// else if(state == 4){
+	// 	domainMax = Number(datesearch[datesearchindex].total_vaccinations);
+	// }
+
+	//create a colour scale
+	var color = d3.scaleLinear()
+		.domain([domainMin, domainMax]) 
+		.range([empty_colour, full_colour]);
+
+	svg.select("#id-" + countryId)
+		.style('fill',function(d,i) { return color(colourValue); }); //here i can be set to a value in the domain above to give a colour between empty and full
+
+}
+
+
+
+	
+	function draw() {     
+
+		svg.selectAll("path.country")
+		.data(map.features)
+		.enter().append("path")
+		.attr(
+        	"id", function (d, i) { return "id-"+i; },	)
+		.attr("class", "country")
+		.attr("d", geoPath)
+		.style("fill", "#010c16")  
+		.style("stroke", border_col)  
+		.style("stroke-width", "0.4");
+
+		//lets see about getting a list of all the dates in one country
+		//console.log(dataset);
+			
+		
+		//console.log(map.features[0].properties.name)
+
+		// try to rebuild  these circle things using the map countries and having their colour schemes as the thingy gets changed
+		//console.log(map.features);
+		//it seems that from the map.features I have some of the same data in the map as in the dataset, such as country name, continent, id
+		//I should be able to modify how the map is drawn easily, based on the data in the dataset
+		//the goal is to change the colour scheme of the countries on the map according to the data, say number of vaccinations for example
+		
+		//at the svg.selectAll("path.country") the field .style("fill", colour) the base colour is set
+		//Im trying to find out which parts of the code adjust the colours of the countries on mouseover, but some changes dont seem to make sense?
+		//in any case if I can access the base colour from the path.country attribute, I can modify the colour I want to 
+
+		//then I would need to create a gradient, such as white to black, which represent vaccination
+		//I could do several different kinds of calculations that modify the colour:
+		//total vaccinations by date
+		//population % vaccinated by date
+		//infections by date
+		//etc etc, there's a lot of data after all so I would just do as many as I have time to
+
+		//the first step is to use the dates to show a specific day and the data on that day
+		//so for example, for Afghanistan, get all the Afghan data for day 1, put relevant data on screen
+		//have a date selector or something to manually show data
+
+
+		// // main circles
+		// svg.selectAll("circle.main_circles")
+		// 	.data(dataset)
+		// 	.enter().append("circle")
+		// 	.attr("class", "main_circles")
+		// 	.attr("cx", d => projection(d.coord)[0])
+		// 	.attr("cy", d => projection(d.coord)[1])
+		// 	.attr("r", d => areaScale(d.vax))
+		// 	.style("stroke", d => colorScale(d.vax))
+		// 	.style("fill", d => colorScale(d.vax))
+		// 	.attr("stroke-width",0.4)
+		// 	.style("stroke-opacity", d => opacityScale(d.vax)+0.1)
+		// 	.style("fill-opacity", d => opacityScale(d.vax)+0.2);
+
+		// // contour circles
+		// svg.selectAll("circle.contour_circles")
+		// 	.data(dataset)
+		// 	.enter().append("circle")
+		// 	.attr("class", "contour_circles")
+		// 	.attr("cx", d => projection(d.coord)[0])
+		// 	.attr("cy", d => projection(d.coord)[1])
+		// 	.attr("r", d => areaScale(d.vax) + circleScale(5))
+		// 	.style("stroke", white_col)
+		// 	.style("fill", white_col)
+		// 	.style("stroke-opacity", 0.085)
+		// 	.attr("stroke-width", 0.2)
+		// 	.style("fill-opacity", 0);
+
+// -------------------------------------- country tooltip
+
+		var country_tooltip = div_main.append("div")
+						.attr("class", "country_tooltip") 
+						.style("opacity", 0)
+						.style("pointer-events", "none")
+						.style("position","absolute")
+						.style("text-align","center")
+						.style("width","120px")
+						.style("height","30px")
+						.style("font","11px Tahoma")
+						.style("color", tooltip_col)
+						.style("background-color", "none")
+						.style("border-radius", "9px")
+						.style("padding", "4px")
+						.style("line-height", "2")
+						.style("display", "inline");
+		
+
+		//try to get specific data
+		// function getVaxd(d) {
+
+		// var vax_by_country = d;
+		// console.log(vax_by_country);
+
+		// //console.log(dataset);
+		// //console.log(d.vax);
+
+		// // for (let index = 0; index < vax.length; index++) {
+		// // 	const element = vax[index];
+		// // 	if(element == vax_by_country){
+		// // 		console.log("what");
+		// // 	}
+		// // }
+
+
+
+		// }
+		
+		// move
+		var country_mousemove = function(d) {
+
+		country_tooltip
+		.transition()		
+		.duration(2000)		
+		.style("opacity", 1);
+
+		// getVaxd(d.properties.name);
+
+		//console.log(d.vax);
+
+		//testy(d.properties.name);
+
+		country_tooltip
+		.html("<b> " + d.properties.name + "<br>" + Tooltipper(d.properties.name) + "</b>" )
+		//.html("<b> " + testy(d.properties.name) + "</b>")
+		.style("left", (d3.event.pageX - 30) + "px")		
+		.style("top", (d3.event.pageY - 30) + "px");
+
+
+
+		d3.select("div.country_tooltip b")
+		.style("font-size", "10px")
+		.style("color", tooltip_col)
+		.style("background-color", "rgba(1, 12, 22, 0.5)")
+		.style("padding", "5px");
+
+		d3.select("div.tooltip span")
+		.style("font-size", "5px")
+		.style("color", "grey");
+
+		d3.select(this)
+		//.style("fill", country_over_col)
+		//.style("fill-opacity", 0)
+		.style("stroke-opacity", 1)
+		.style("stroke", "white");
+
+		//console.log(this);
+
+		}
+
+		// leave
+		var country_mouseleave = function(d) {
+
+		country_tooltip
+		.transition()	
+		.delay(1500)	
+		.duration(200)		
+		.style("opacity", 0);
+
+		d3.select(this)
+		//.style("fill", black_col)
+		//.style("fill-opacity", 0.4)
+		.style("stroke-opacity", 0.8)
+		.style("stroke", border_col);
+
+		}
+
+		// call the tooltip
+		d3.selectAll("path.country")
+		.on("mousemove", country_mousemove)
+		.on("mouseleave", country_mouseleave);
+						   
+	}  
+
+		</script>
+		
+		<label for="day" style="color:white">Input day (0-1032):</label>
+		<input type="number" id="day" name="day" min="0" max="1032" onchange="runFunctions()">
+
+		<label for="functions" style="color:white">Choose what to show:</label>
+		<select name="functions" id="functions" onchange="runFunctions()">
+			<option value="1">Case spread in country</option>
+			<option value="2">Case spread compared to greatest spread</option>
+			<option value="3">Case spread compared to population</option>
+			<option value="4">People vaccinated compared to population</option>
+			<option value="5">Excess mortality (slow)</option>
+			<option value="6">Total deaths per country compared to most deaths</option>
+		</select>
+
+		<button type="button" onclick="playTimeline()">Play timeline</button>
+		<button type="button" onclick="stopTimeline()">Stop</button>
+
+
+	</body>
+</html>
